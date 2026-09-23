@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE = "your-dockerhub-username/node-blue-green"
+        DOCKER_IMAGE = "pranathi0412/node-blue-green"
         IMAGE_TAG = "${BUILD_NUMBER}"
         REGISTRY_CREDENTIALS = "docker-hub-credentials"
         
@@ -19,12 +19,14 @@ pipeline {
 
         stage('Build & Push Docker Image') {
             steps {
-                script {
-                    docker.withRegistry('', REGISTRY_CREDENTIALS) {
-                        def customImage = docker.build("${DOCKER_IMAGE}:${IMAGE_TAG}")
-                        customImage.push()
-                        customImage.push("latest")
-                    }
+                withCredentials([usernamePassword(credentialsId: "${REGISTRY_CREDENTIALS}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USER')]) {
+                    sh """
+                        echo "\$DOCKER_PASSWORD" | docker login -u "\$DOCKER_USER" --password-stdin
+                        docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} .
+                        docker tag ${DOCKER_IMAGE}:${IMAGE_TAG} ${DOCKER_IMAGE}:latest
+                        docker push ${DOCKER_IMAGE}:${IMAGE_TAG}
+                        docker push ${DOCKER_IMAGE}:latest
+                    """
                 }
             }
         }
@@ -32,8 +34,7 @@ pipeline {
         stage('Determine Active & Idle Environments') {
             steps {
                 script {
-                    // Check which environment Nginx is currently routing traffic to
-                    def activePort = sh(script: "grep 'server 127.0.0.1:' /etc/nginx/conf.d/app.conf | grep -o '[0-9]*'", returnStdout: true).trim()
+                    def activePort = sh(script: "grep 'server 127.0.0.1:' /opt/homebrew/etc/nginx/conf.d/app.conf | grep -o '[0-9]*' || echo '${BLUE_PORT}'", returnStdout: true).trim()
                     
                     if (activePort == BLUE_PORT) {
                         env.TARGET_ENV = "green"
@@ -54,11 +55,9 @@ pipeline {
         stage('Deploy to Idle Environment') {
             steps {
                 script {
-                    // Stop and remove existing container in idle environment if present
                     sh "docker stop ${env.IDLE_CONTAINER} || true"
                     sh "docker rm ${env.IDLE_CONTAINER} || true"
 
-                    // Pull latest image and run on the target port
                     sh """
                         docker run -d \
                           --name ${env.IDLE_CONTAINER} \
@@ -74,7 +73,6 @@ pipeline {
             steps {
                 script {
                     echo "Running health check on http://127.0.0.1:${env.TARGET_PORT}/health..."
-                    // Wait for the application to be healthy
                     sh """
                         for i in {1..10}; do
                           if curl -s http://127.0.0.1:${env.TARGET_PORT}/health | grep -q "OK"; then
@@ -94,10 +92,9 @@ pipeline {
         stage('Switch Traffic (Zero-Downtime Cutover)') {
             steps {
                 script {
-                    // Update Nginx upstream configuration to point to the newly deployed container
                     sh """
-                        sudo sed -i 's/server 127.0.0.1:.*/server 127.0.0.1:${env.TARGET_PORT};/' /etc/nginx/conf.d/app.conf
-                        sudo nginx -s reload
+                        sed -i '' 's/server 127.0.0.1:.*/server 127.0.0.1:${env.TARGET_PORT};/' /opt/homebrew/etc/nginx/conf.d/app.conf
+                        nginx -s reload
                     """
                     echo "Traffic successfully switched to ${env.TARGET_ENV} on port ${env.TARGET_PORT}"
                 }
@@ -107,7 +104,6 @@ pipeline {
 
     post {
         always {
-            // Remove unused Docker images to clean up resources
             sh 'docker image prune -f'
         }
     }
