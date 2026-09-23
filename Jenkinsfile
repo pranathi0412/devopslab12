@@ -8,6 +8,7 @@ pipeline {
         
         BLUE_PORT = "3001"
         GREEN_PORT = "3002"
+        NGINX_CONF = "/opt/homebrew/etc/nginx/conf.d/app.conf"
     }
 
     stages {
@@ -34,7 +35,7 @@ pipeline {
         stage('Determine Active & Idle Environments') {
             steps {
                 script {
-                    def activePort = sh(script: "grep 'server 127.0.0.1:' /opt/homebrew/etc/nginx/conf.d/app.conf | grep -o '[0-9]*' || echo '${BLUE_PORT}'", returnStdout: true).trim()
+                    def activePort = sh(script: "grep 'server 127.0.0.1:' ${NGINX_CONF} 2>/dev/null | grep -o '[0-9]*' || echo '${BLUE_PORT}'", returnStdout: true).trim()
                     
                     if (activePort == BLUE_PORT) {
                         env.TARGET_ENV = "green"
@@ -93,7 +94,7 @@ pipeline {
             steps {
                 script {
                     sh """
-                        sed -i '' 's/server 127.0.0.1:.*/server 127.0.0.1:${env.TARGET_PORT};/' /opt/homebrew/etc/nginx/conf.d/app.conf
+                        sed -i '' 's/server 127.0.0.1:.*/server 127.0.0.1:${env.TARGET_PORT};/' ${NGINX_CONF}
                         nginx -s reload
                     """
                     echo "Traffic successfully switched to ${env.TARGET_ENV} on port ${env.TARGET_PORT}"
