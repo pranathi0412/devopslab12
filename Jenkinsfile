@@ -32,10 +32,24 @@ pipeline {
             }
         }
 
+        stage('Ensure Nginx Config Exists') {
+            steps {
+                script {
+                    sh """
+                        mkdir -p /opt/homebrew/etc/nginx/conf.d
+                        if [ ! -f ${NGINX_CONF} ]; then
+                            echo 'Creating missing Nginx app.conf...'
+                            echo "upstream app_backend { server 127.0.0.1:${BLUE_PORT}; } server { listen 8080; server_name localhost; location / { proxy_pass http://app_backend; } }" > ${NGINX_CONF}
+                        fi
+                    """
+                }
+            }
+        }
+
         stage('Determine Active & Idle Environments') {
             steps {
                 script {
-                    def activePort = sh(script: "grep 'server 127.0.0.1:' ${NGINX_CONF} 2>/dev/null | grep -o '[0-9]*' || echo '${BLUE_PORT}'", returnStdout: true).trim()
+                    def activePort = sh(script: "grep 'server 127.0.0.1:' ${NGINX_CONF} | grep -o '[0-9]*' || echo '${BLUE_PORT}'", returnStdout: true).trim()
                     
                     if (activePort == BLUE_PORT) {
                         env.TARGET_ENV = "green"
