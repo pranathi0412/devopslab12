@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKER_IMAGE = "pranathi0412/node-blue-green"
         IMAGE_TAG = "${BUILD_NUMBER}"
-        REGISTRY_CREDENTIALS = "docker-hub-credentials"
+        REGISTRY_CREDENTIALS = "docker-hub-creds"
         
         BLUE_PORT = "3001"
         GREEN_PORT = "3002"
